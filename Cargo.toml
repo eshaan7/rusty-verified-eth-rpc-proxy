@@ -1,0 +1,30 @@
+[package]
+name = "rusty-verified-eth-rpc-proxy"
+version = "0.1.0"
+edition = "2021"
+authors = ["Eshaan Bansal <eshaan7bansal@gmail.com>"]
+description = "A Rust crate that turns an untrusted Ethereum JSON-RPC Execution API provider into a verified data source by requesting Merkle proofs and checking them against the state hash."
+license = "MIT"
+repository = "https://github.com/eshaan7/rusty-verified-eth-rpc-proxy"
+documentation = "https://docs.rs/rusty-verified-eth-rpc-proxy"
+homepage = "https://github.com/eshaan7/rusty-verified-eth-rpc-proxy"
+keywords = [
+    "ethereum",
+    "ethereum-json-rpc",
+    "ethereum-execution-json-rpc",
+    "rpc",
+    "proxy",
+    "alloy",
+    "rust",
+]
+categories = ["network-programming", "api-bindings"]
+
+[dependencies]
+alloy = { version = "0.4.0", features = ["full", "json-rpc", "rlp"] }
+alloy-trie = "0.7.2"
+tokio = { version = "1.40", features = ["full"] }
+eyre = "0.6"
+serde = "1.0"
+serde_json = "1.0"
+reqwest = "0.12.8"
+thiserror = "1.0.64"
