@@ -7,6 +7,7 @@ use alloy::transports::http::Http;
 use eyre::{Ok, Result};
 use reqwest::Client;
 
+use crate::common::RpcVerifiableMethods;
 use crate::errors::RpcError;
 
 pub struct HttpRpc {
@@ -87,10 +88,13 @@ impl HttpRpc {
 
         Ok(block)
     }
+}
 
-    pub async fn get_account(
+impl RpcVerifiableMethods for HttpRpc {
+    async fn get_account(
         &self,
         address: Address,
+        _: Option<&[B256]>,
         tag: Option<BlockNumberOrTag>,
     ) -> Result<Account> {
         let tag = tag.unwrap_or(BlockNumberOrTag::Latest);
@@ -102,11 +106,7 @@ impl HttpRpc {
         Ok(account)
     }
 
-    pub async fn get_balance(
-        &self,
-        address: Address,
-        tag: Option<BlockNumberOrTag>,
-    ) -> Result<U256> {
+    async fn get_balance(&self, address: Address, tag: Option<BlockNumberOrTag>) -> Result<U256> {
         let tag = tag.unwrap_or(BlockNumberOrTag::Latest);
 
         let balance = self
@@ -116,7 +116,7 @@ impl HttpRpc {
         Ok(balance)
     }
 
-    pub async fn get_nonce(&self, address: Address, tag: Option<BlockNumberOrTag>) -> Result<u64> {
+    async fn get_nonce(&self, address: Address, tag: Option<BlockNumberOrTag>) -> Result<u64> {
         let tag = tag.unwrap_or(BlockNumberOrTag::Latest);
 
         let nonce = self

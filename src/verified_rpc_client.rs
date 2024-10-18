@@ -7,6 +7,7 @@ use alloy_trie::proof::verify_proof;
 use alloy_trie::Nibbles;
 use eyre::{Ok, Result};
 
+use crate::common::RpcVerifiableMethods;
 use crate::http_rpc::HttpRpc;
 
 // Type alias for better readability
@@ -32,8 +33,10 @@ impl VerifiedRpcClient {
             self.trusted_blocks.insert(*number, *state_root);
         }
     }
+}
 
-    pub async fn get_account(
+impl RpcVerifiableMethods for VerifiedRpcClient {
+    async fn get_account(
         &self,
         address: Address,
         slots: Option<&[B256]>,
@@ -73,17 +76,13 @@ impl VerifiedRpcClient {
         Ok(account)
     }
 
-    pub async fn get_balance(
-        &self,
-        address: Address,
-        tag: Option<BlockNumberOrTag>,
-    ) -> Result<U256> {
+    async fn get_balance(&self, address: Address, tag: Option<BlockNumberOrTag>) -> Result<U256> {
         let account = self.get_account(address, None, tag).await?;
 
         Ok(account.balance)
     }
 
-    pub async fn get_nonce(&self, address: Address, tag: Option<BlockNumberOrTag>) -> Result<u64> {
+    async fn get_nonce(&self, address: Address, tag: Option<BlockNumberOrTag>) -> Result<u64> {
         let account = self.get_account(address, None, tag).await?;
 
         Ok(account.nonce)
