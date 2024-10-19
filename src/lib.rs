@@ -1,7 +1,7 @@
 // make the following modules public
 pub mod common;
-pub mod errors;
 pub mod http_rpc;
+pub mod proof;
 pub mod verified_rpc_client;
 
 #[cfg(test)]
@@ -95,6 +95,6 @@ mod tests {
 
         let result = verified_client.get_account(addr, None, tag).await;
 
-        assert!(result.is_err_and(|e| e.to_string().starts_with("Failed to verify proof")));
+        assert!(result.is_err_and(|e| e.to_string().starts_with("Failed to verify account proof")));
     }
 }

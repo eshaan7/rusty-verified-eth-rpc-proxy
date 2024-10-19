@@ -1,14 +1,13 @@
 use alloy::consensus::Account;
-use alloy::primitives::{Address, B256, U256};
+use alloy::primitives::{Address, Bytes, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder, RootProvider};
 use alloy::rpc::json_rpc::{RpcParam, RpcReturn};
 use alloy::rpc::types::{Block, BlockNumberOrTag, EIP1186AccountProofResponse};
 use alloy::transports::http::Http;
-use eyre::{Ok, Result};
+use eyre::{eyre, Ok, Result};
 use reqwest::Client;
 
 use crate::common::RpcVerifiableMethods;
-use crate::errors::RpcError;
 
 pub struct HttpRpc {
     #[allow(dead_code)]
@@ -35,7 +34,7 @@ impl HttpRpc {
             .provider
             .raw_request(method.to_string().into(), params)
             .await
-            .map_err(|e| RpcError::new(method, e))?;
+            .map_err(|e| eyre!("Method: {method}, Error: {e}"))?;
 
         Ok(response)
     }
@@ -51,7 +50,7 @@ impl HttpRpc {
             .get_proof(address, slots.to_vec())
             .block_id(block_number.into())
             .await
-            .map_err(|e| RpcError::new("eth_getProof", e))?;
+            .map_err(|e| eyre!("Method: eth_getProof, Error: {e}"))?;
 
         Ok(proof)
     }
@@ -83,8 +82,8 @@ impl HttpRpc {
             .provider
             .get_block_by_number(tag, false)
             .await
-            .map_err(|e| RpcError::new("eth_getBlockByNumber", e))?
-            .expect(format!("block not found for tag: {:?}", tag).as_str());
+            .map_err(|e| eyre!("Method: eth_getBlockByNumber, Error: {e}"))?
+            .ok_or_else(|| eyre!("Block not found for {tag}"))?;
 
         Ok(block)
     }
@@ -124,5 +123,31 @@ impl RpcVerifiableMethods for HttpRpc {
             .await?;
 
         Ok(nonce)
+    }
+
+    async fn get_code(&self, address: Address, tag: Option<BlockNumberOrTag>) -> Result<Bytes> {
+        let tag = tag.unwrap_or(BlockNumberOrTag::Latest);
+
+        let code = self
+            .raw_request("eth_getCode".into(), (address, tag))
+            .await?;
+
+        Ok(code)
+    }
+
+    async fn get_storage_at(
+        &self,
+        address: Address,
+        slot: B256,
+        tag: Option<BlockNumberOrTag>,
+    ) -> Result<U256> {
+        let tag = tag.unwrap_or(BlockNumberOrTag::Latest);
+        let slot = Into::<U256>::into(slot);
+
+        let storage_value = self
+            .raw_request("eth_getStorageAt".into(), (address, slot, tag))
+            .await?;
+
+        Ok(storage_value)
     }
 }

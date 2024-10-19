@@ -1,14 +1,12 @@
-use std::collections::HashMap;
-
 use alloy::consensus::Account;
 use alloy::eips::BlockNumberOrTag;
-use alloy::primitives::{keccak256, Address, B256, U256};
-use alloy_trie::proof::verify_proof;
-use alloy_trie::Nibbles;
-use eyre::{Ok, Result};
+use alloy::primitives::{Address, Bytes, B256, U256};
+use eyre::{eyre, Ok, Result};
+use std::collections::HashMap;
 
 use crate::common::RpcVerifiableMethods;
 use crate::http_rpc::HttpRpc;
+use crate::proof::{proof_to_account, verify_code_hash, verify_rpc_proof, verify_storage_proof};
 
 // Type alias for better readability
 type BlockNumber = u64;
@@ -46,32 +44,24 @@ impl RpcVerifiableMethods for VerifiedRpcClient {
 
         // Get block number from the tag
         let block_number = self.rpc.get_block_number(tag).await?;
+        let tag = Some(BlockNumberOrTag::Number(block_number));
 
         // Ensure we have this block in our trusted blocks
-        let block_state_root = self.trusted_blocks.get(&block_number).ok_or_else(|| {
-            eyre::eyre!(format!("Block {} has no trusted state root", block_number))
-        })?;
+        let block_state_root = self
+            .trusted_blocks
+            .get(&block_number)
+            .ok_or_else(|| eyre!("Block {block_number} has no trusted state root"))?;
 
-        // Get the proof from the RPC
+        // Get account proof from the RPC
         let proof = self.rpc.get_proof(address, slots, block_number).await?;
+        // Get account code from the RPC
+        let code = self.rpc.get_code(address, tag).await?;
 
         // MOST IMPORTANT!!
         // Verify the proof fetched from RPC against the trusted state root
-        let account_key = Nibbles::unpack(keccak256(address)); // key in the trie
-        let account = Account {
-            nonce: proof.nonce,
-            balance: proof.balance,
-            storage_root: proof.storage_hash,
-            code_hash: proof.code_hash,
-        };
-        let account_encoded_value = alloy::rlp::encode(account); // value in the trie
-        verify_proof(
-            *block_state_root,
-            account_key,
-            account_encoded_value.into(),
-            &proof.account_proof,
-        )
-        .map_err(|e| eyre::eyre!(format!("Failed to verify proof: {:?}", e)))?; // throw error if verification fails
+        verify_rpc_proof(&proof, &code, &block_state_root)?;
+
+        let account = proof_to_account(&proof);
 
         Ok(account)
     }
@@ -86,5 +76,48 @@ impl RpcVerifiableMethods for VerifiedRpcClient {
         let account = self.get_account(address, None, tag).await?;
 
         Ok(account.nonce)
+    }
+
+    async fn get_code(&self, address: Address, tag: Option<BlockNumberOrTag>) -> Result<Bytes> {
+        // Get block number from the tag
+        let block_number = self.rpc.get_block_number(tag).await?;
+        let tag = Some(BlockNumberOrTag::Number(block_number));
+
+        // Get account code from the RPC
+        let code = self.rpc.get_code(address, tag).await?;
+        // Get account proof from the RPC
+        let proof = self.rpc.get_proof(address, &[], block_number).await?;
+
+        // MOST IMPORTANT!!
+        // Verify the proof fetched from RPC
+        verify_code_hash(&proof, &code)?;
+
+        Ok(code)
+    }
+
+    async fn get_storage_at(
+        &self,
+        address: Address,
+        slot: B256,
+        tag: Option<BlockNumberOrTag>,
+    ) -> Result<U256> {
+        // Get block number from the tag
+        let block_number = self.rpc.get_block_number(tag).await?;
+
+        // Get account proof from the RPC
+        let proof = self.rpc.get_proof(address, &[slot], block_number).await?;
+
+        // MOST IMPORTANT!!
+        // Verify the proof fetched from RPC
+        verify_storage_proof(&proof)?;
+
+        proof
+            .storage_proof
+            .iter()
+            .find(|storage_slot| storage_slot.key.0 == slot)
+            .map_or_else(
+                || Err(eyre!("Slot not found")),
+                |storage_slot| Ok(storage_slot.value),
+            )
     }
 }

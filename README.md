@@ -2,7 +2,21 @@
 
 A Rust crate that turns an untrusted Ethereum JSON-RPC Execution API provider into a verified data source by requesting Merkle proofs and checking them against the state hash.
 
+## Usage
+
 Refer to the tests in [`src/lib.rs`](/src/lib.rs) for example usage.
+
+## Available Methods
+
+The following methods can be made verifiied:
+
+| RPC Method                  | Implemented    |
+|-----------------------------|----------------|
+| eth_getAccount              | ✅             |
+| eth_getBalance              | ✅             |
+| eth_getTransactionCount     | ✅             |
+| eth_getCode                 | ✅             |
+| eth_getStorageAt            | ✅             |
 
 ## Inspiration
 
