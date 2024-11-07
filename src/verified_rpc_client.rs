@@ -1,35 +1,65 @@
+use std::collections::HashMap;
+
 use alloy::consensus::Account;
 use alloy::eips::BlockNumberOrTag;
-use alloy::primitives::{Address, Bytes, B256, U256};
+use alloy::primitives::{Address, BlockHash, BlockNumber, Bytes, B256, U256};
+use alloy::rpc::types::TransactionReceipt;
 use eyre::{eyre, Ok, Result};
-use std::collections::HashMap;
 
 use crate::common::RpcVerifiableMethods;
 use crate::http_rpc::HttpRpc;
 use crate::proof::{proof_to_account, verify_code_hash, verify_rpc_proof, verify_storage_proof};
+use crate::utils::{encode_receipt, ordered_trie_root};
 
-// Type alias for better readability
-type BlockNumber = u64;
-type StateRoot = B256;
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct TrustedBlock {
+    pub number: BlockNumber,
+    pub hash: BlockHash,
+    pub state_root: B256,
+    pub receipts_root: B256,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct State {
+    /// A map from block number to state root
+    trusted_blocks: HashMap<BlockNumber, TrustedBlock>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            trusted_blocks: HashMap::new(),
+        }
+    }
+}
+
+impl State {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_trusted_blocks(&mut self, blocks: &[TrustedBlock]) {
+        for block in blocks {
+            self.trusted_blocks.insert(block.number, block.clone());
+        }
+    }
+
+    pub fn latest_trusted_block(&self) -> Option<&TrustedBlock> {
+        self.trusted_blocks.values().max_by_key(|b| b.number)
+    }
+}
 
 pub struct VerifiedRpcClient {
-    /// A map from block number to state root
-    trusted_blocks: HashMap<BlockNumber, StateRoot>,
+    pub state: State,
     rpc: HttpRpc,
 }
 
 impl VerifiedRpcClient {
     pub fn new(rpc: &str) -> Result<Self> {
         Ok(Self {
-            trusted_blocks: HashMap::new(),
+            state: State::default(),
             rpc: HttpRpc::new(rpc)?,
         })
-    }
-
-    pub fn add_trusted_blocks(&mut self, blocks: &[(BlockNumber, StateRoot)]) {
-        for (number, state_root) in blocks {
-            self.trusted_blocks.insert(*number, *state_root);
-        }
     }
 }
 
@@ -47,10 +77,11 @@ impl RpcVerifiableMethods for VerifiedRpcClient {
         let tag = Some(BlockNumberOrTag::Number(block_number));
 
         // Ensure we have this block in our trusted blocks
-        let block_state_root = self
+        let trusted_block = self
+            .state
             .trusted_blocks
             .get(&block_number)
-            .ok_or_else(|| eyre!("Block {block_number} has no trusted state root"))?;
+            .ok_or_else(|| eyre!("Block {block_number} is not in trusted list"))?;
 
         // Get account proof from the RPC
         let proof = self.rpc.get_proof(address, slots, block_number).await?;
@@ -59,7 +90,7 @@ impl RpcVerifiableMethods for VerifiedRpcClient {
 
         // MOST IMPORTANT!!
         // Verify the proof fetched from RPC against the trusted state root
-        verify_rpc_proof(&proof, &code, &block_state_root)?;
+        verify_rpc_proof(&proof, &code, &trusted_block.state_root)?;
 
         let account = proof_to_account(&proof);
 
@@ -119,5 +150,62 @@ impl RpcVerifiableMethods for VerifiedRpcClient {
                 || Err(eyre!("Slot not found")),
                 |storage_slot| Ok(storage_slot.value),
             )
+    }
+
+    async fn get_transaction_receipt(&self, tx_hash: B256) -> Result<TransactionReceipt> {
+        let receipt = self.rpc.get_transaction_receipt(tx_hash).await?;
+
+        let block_num = receipt
+            .block_number
+            .ok_or_else(|| eyre!("Block number not found in receipt for tx hash {tx_hash}"))?;
+        let tag = Some(BlockNumberOrTag::Number(block_num));
+
+        let receipts = self.get_block_receipts(tag).await?;
+
+        if !receipts.contains(&&receipt) {
+            // Note: for some reason the above check is flaky
+            // so we compare again by encoding the receipts
+            if encode_receipt(&receipt)
+                != encode_receipt(&receipts[receipt.transaction_index.unwrap() as usize])
+            {
+                return Err(eyre!(
+                    "Failed to verify receipt for tx hash {tx_hash} in block {block_num}"
+                ));
+            }
+        }
+
+        Ok(receipt)
+    }
+
+    async fn get_block_receipts(
+        &self,
+        tag: Option<BlockNumberOrTag>,
+    ) -> Result<Vec<TransactionReceipt>> {
+        // Get block number from the tag
+        let block_number = self.rpc.get_block_number(tag).await?;
+
+        // Ensure we have this block in our trusted blocks
+        let trusted_block = self
+            .state
+            .trusted_blocks
+            .get(&block_number)
+            .ok_or_else(|| eyre!("Block {block_number} is not trusted"))?;
+
+        let receipts = self.rpc.get_block_receipts(tag).await?;
+
+        // MOST IMPORTANT!!
+        // Verify the receipts root
+        let receipts_encoded: Vec<Vec<u8>> = receipts.iter().map(|r| encode_receipt(r)).collect();
+        let computed_receipts_root = ordered_trie_root(receipts_encoded.as_slice());
+        if computed_receipts_root != trusted_block.receipts_root {
+            return Err(eyre!(
+                "Receipts root mismatch for block {:?}: expected {:?}, got {:?}",
+                block_number,
+                trusted_block.receipts_root,
+                computed_receipts_root
+            ));
+        }
+
+        Ok(receipts)
     }
 }

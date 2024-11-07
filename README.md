@@ -8,7 +8,7 @@ Refer to the tests in [`src/lib.rs`](/src/lib.rs) for example usage.
 
 ## Available Methods
 
-The following methods can be made verifiied:
+The following methods can be made verified:
 
 | RPC Method                  | Implemented    |
 |-----------------------------|----------------|
@@ -17,6 +17,8 @@ The following methods can be made verifiied:
 | eth_getTransactionCount     | ✅             |
 | eth_getCode                 | ✅             |
 | eth_getStorageAt            | ✅             |
+| eth_getTransactionReceipt   | ✅             |
+| eth_getBlockReceipts        | ✅             |
 
 ## Inspiration
 

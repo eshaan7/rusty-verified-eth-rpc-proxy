@@ -2,7 +2,7 @@ use alloy::consensus::Account;
 use alloy::primitives::{Address, Bytes, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder, RootProvider};
 use alloy::rpc::json_rpc::{RpcParam, RpcReturn};
-use alloy::rpc::types::{Block, BlockNumberOrTag, EIP1186AccountProofResponse};
+use alloy::rpc::types::{Block, BlockNumberOrTag, EIP1186AccountProofResponse, TransactionReceipt};
 use alloy::transports::http::Http;
 use eyre::{eyre, Ok, Result};
 use reqwest::Client;
@@ -149,5 +149,32 @@ impl RpcVerifiableMethods for HttpRpc {
             .await?;
 
         Ok(storage_value)
+    }
+
+    async fn get_transaction_receipt(&self, tx_hash: B256) -> Result<TransactionReceipt> {
+        let receipt = self
+            .provider
+            .get_transaction_receipt(tx_hash)
+            .await
+            .map_err(|e| eyre!("Method: eth_getTransactionReceipt, Error: {e}"))?
+            .ok_or_else(|| eyre!("Transaction receipt not found for {tx_hash}"))?;
+
+        Ok(receipt)
+    }
+
+    async fn get_block_receipts(
+        &self,
+        tag: Option<BlockNumberOrTag>,
+    ) -> Result<Vec<TransactionReceipt>> {
+        let tag = tag.unwrap_or(BlockNumberOrTag::Latest);
+
+        let receipts = self
+            .provider
+            .get_block_receipts(tag.into())
+            .await
+            .map_err(|e| eyre!("Method: eth_getBlockReceipts, Error: {e}"))?
+            .ok_or_else(|| eyre!("Block receipts not found for {tag}"))?;
+
+        Ok(receipts)
     }
 }
