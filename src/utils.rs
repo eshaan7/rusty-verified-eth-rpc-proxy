@@ -4,7 +4,7 @@ use alloy::{
     rlp,
     rpc::types::TransactionReceipt,
 };
-use alloy_trie::{nybbles::Nibbles, HashBuilder, EMPTY_ROOT_HASH};
+use alloy_trie::root::ordered_trie_root_with_encoder;
 
 pub fn encode_receipt(receipt: &TransactionReceipt) -> Vec<u8> {
     let tx_type = receipt.transaction_type();
@@ -42,34 +42,12 @@ pub fn encode_receipt_logs(receipt: &TransactionReceipt) -> Vec<Vec<u8>> {
     encoded_logs
 }
 
-/// Adjust the index of an item for rlp encoding.
-/// Modified version of https://github.com/alloy-rs/trie/blob/main/src/root.rs.
-fn adjust_index_for_rlp(i: usize, len: usize) -> usize {
-    if i > 0x7f {
-        i
-    } else if i == 0x7f || i + 1 == len {
-        0
-    } else {
-        i + 1
-    }
-}
-
 /// Compute a trie root of the collection of encoded items.
-/// Modified version of https://github.com/alloy-rs/trie/blob/main/src/root.rs.
+/// Ref: https://github.com/alloy-rs/trie/blob/main/src/root.rs.
 pub fn ordered_trie_root(items: &[Vec<u8>]) -> B256 {
-    if items.is_empty() {
-        return EMPTY_ROOT_HASH;
+    fn noop_encoder(item: &Vec<u8>, buffer: &mut Vec<u8>) {
+        buffer.extend_from_slice(item);
     }
 
-    let mut hb = HashBuilder::default();
-    let items_len = items.len();
-    for i in 0..items_len {
-        let index = adjust_index_for_rlp(i, items_len);
-        let index_buffer = rlp::encode_fixed_size(&index);
-        let value_buffer = &items[index];
-
-        hb.add_leaf(Nibbles::unpack(&index_buffer), value_buffer);
-    }
-
-    hb.root()
+    ordered_trie_root_with_encoder(items, noop_encoder)
 }
