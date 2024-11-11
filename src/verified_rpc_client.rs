@@ -162,9 +162,11 @@ impl RpcVerifiableMethods for VerifiedRpcClient {
 
         let receipts = self.get_block_receipts(tag).await?;
 
-        if !receipts.contains(&&receipt) {
-            // Note: for some reason the above check is flaky
-            // so we compare again by encoding the receipts
+        if !receipts.contains(&receipt) {
+            // Note: Some RPC providers return different response in `eth_getTransactionReceipt` vs `eth_getBlockReceipts`
+            // Primarily due to https://github.com/ethereum/execution-apis/issues/295 not finalized
+            // Which means that the basic equality check on struct can be flaky
+            // So as a fallback do equality check on encoded receipts as well
             if encode_receipt(&receipt)
                 != encode_receipt(&receipts[receipt.transaction_index.unwrap() as usize])
             {
